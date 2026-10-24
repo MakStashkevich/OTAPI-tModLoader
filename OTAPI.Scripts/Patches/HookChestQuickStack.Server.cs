@@ -42,6 +42,11 @@ partial class ChestHooks
     [Modification(ModType.PreMerge, "Hooking chest stacking")]
     static void HookChestQuickStack(ModFwModder modder)
     {
+#if tModLoader_1448_OrAbove
+        // tModLoader's quick-stack implementation differs from both vanilla target layouts.
+        // Skip this optional hook while validating the compatibility port.
+        return;
+#else
 #if TerrariaServer_1450_OrAbove || Terraria_1450_OrAbove || tModLoader_1450_OrAbove
         {
             // DO NOT use GetILCursor(). The instruction body does not have jumps transformed into labels,
@@ -195,6 +200,7 @@ partial class ChestHooks
                 new { OpCodes.Br, Operand = (Instruction)beginInstruction.Operand }
             );
         }
+#endif
 #endif
     }
 

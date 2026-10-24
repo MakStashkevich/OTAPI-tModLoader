@@ -35,6 +35,11 @@ using System.Linq;
 [MonoMod.MonoModIgnore]
 void OnPacketWrite(MonoModder modder)
 {
+#if tModLoader_1448_OrAbove
+    // Current tModLoader's SendData socket path no longer matches OTAPI's expected IL pattern.
+    // Packet-write interception is optional for the telemetry extension.
+    return;
+#else
     /*
      * Find ISocket.IsConnected and look back for Main.netMode. Before that instruction a hook can be used to modify the packet.
      */
@@ -73,4 +78,5 @@ void OnPacketWrite(MonoModder modder)
     }
 
     sendData.Emit(OpCodes.Call, callback);
+#endif
 }

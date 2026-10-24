@@ -36,6 +36,12 @@ partial class CollisionSwitchTiles
     [Modification(ModType.PreMerge, "Patching Collision.SwitchTiles")]
     public static void ModifyCollisionSwitchTiles(ModFwModder modder)
     {
+#if tModLoader_1448_OrAbove
+        // tModLoader 1.4.4+ rewrites Collision.SwitchTiles callers in ways
+        // this optional pressure-plate entity hook does not currently support.
+        // Leave the vanilla method untouched for this target.
+        return;
+#else
 #if TerrariaServer_1455_OrAbove
         var csr = modder.GetILCursor(() => Terraria.Collision.SwitchTiles(default, default, 0, 0, default, 0));
 #else
@@ -121,6 +127,7 @@ partial class CollisionSwitchTiles
                 }
             }
         }
+#endif
     }
 }
 

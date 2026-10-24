@@ -31,10 +31,10 @@ using MonoMod;
 [MonoMod.MonoModIgnore]
 void PatchPrivateClasses(MonoModder modder)
 {
-    modder.Module.GetType("MonoLaunch").SetPublic(true);
-    modder.Module.GetType("Terraria.Program").SetPublic(true);
+    modder.Module.GetType("MonoLaunch")?.SetPublic(true);
+    modder.Module.GetType("Terraria.Program")?.SetPublic(true);
     var iv = modder.Module.GetType("Terraria.ModLoader.Engine.InstallVerifier");
-    iv.SetPublic(true);
-    iv.Field("steamAPIPath").SetPublic(true);
+    iv?.SetPublic(true);
+    iv?.Field("steamAPIPath")?.SetPublic(true);
 }
 #endif

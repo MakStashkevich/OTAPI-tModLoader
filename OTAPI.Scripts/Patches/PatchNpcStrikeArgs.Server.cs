@@ -37,6 +37,8 @@ partial class NpcStrikeArgs
         var csr = modder.GetILCursor(() => (new Terraria.NPC()).StrikeNPC(0, 0, 0, false, false, 0));
 #elif TerrariaServer_1450_OrAbove || Terraria_1450_OrAbove || tModLoader_1450_OrAbove
         var csr = modder.GetILCursor(() => (new Terraria.NPC()).StrikeNPC(0, 0, 0, false, false, false, 0));
+#elif tModLoader_1448_OrAbove
+        var csr = modder.GetILCursor(() => (new Terraria.NPC()).StrikeNPC(default, false, false));
 #else
         var csr = modder.GetILCursor(() => (new Terraria.NPC()).StrikeNPC(0, 0, 0, false, false, false));
 #endif
@@ -115,6 +117,12 @@ partial class NpcStrikeArgs
                                 break;
 
                             default:
+                                if (body.Method.HasThis &&
+                                    body.Method.DeclaringType.BaseType?.FullName == typeof(Terraria.Entity).FullName)
+                                {
+                                    body.GetILProcessor().InsertBefore(instr, new { OpCodes.Ldarg_0 });
+                                    break;
+                                }
                                 throw new NotImplementedException($"{body.Method.FullName} is not a supported caller for this modification");
                         }
                     }

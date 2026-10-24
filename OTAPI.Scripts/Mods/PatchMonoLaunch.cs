@@ -35,6 +35,10 @@ using MonoMod;
 [MonoMod.MonoModIgnore]
 void PathMonoLaunch(MonoModder modder)
 {
+#if tModLoader_1448_OrAbove
+    // This tModLoader version no longer uses the MonoLaunch type.
+    return;
+#else
     var mth = modder.Module.GetType("MonoLaunch").Methods.Single(m => m.Name == "ResolveNativeLibrary");
     var rnl = modder.GetILCursor(mth);
     var gbd = modder.GetMethodDefinition(() => patch_MonoLaunch.GetBaseDirectory(), followRedirect: true);
@@ -42,6 +46,7 @@ void PathMonoLaunch(MonoModder modder)
     rnl.GotoNext(i => i.OpCode == OpCodes.Call && i.Operand is MethodReference mref && mref.Name == "get_CurrentDirectory");
 
     rnl.Next.Operand = gbd;
+#endif
 }
 
 public static partial class patch_MonoLaunch
