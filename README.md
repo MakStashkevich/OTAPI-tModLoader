@@ -47,6 +47,8 @@ All OTAPI builds support C#/lua/js scripts via plugins, however you may need to 
 
 ## Runtime world telemetry (tModLoader 1.4.4.9 fork)
 
+For branch setup, build steps, safe test commands, and current compatibility limitations, see [the tModLoader 1.4.4.9 fork notes](docs/TMODLOADER_1444_COMPAT.md).
+
 The server launcher includes an optional C# runtime plugin at
 `OTAPI.Server.Launcher/modifications/WorldTelemetry.Server.cs`. The launcher
 copies it to the server's `modifications` folder; OTAPI loads it through the
