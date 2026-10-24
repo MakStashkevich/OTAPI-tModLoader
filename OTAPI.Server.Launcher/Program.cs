@@ -48,9 +48,9 @@ static Hook LazyHook(string type, string method, Delegate callback)
 
 static void Nop() { }
 
+#if !TML
 static void Program_LaunchGame(object sender, HookEvents.Terraria.Program.LaunchGameEventArgs e)
 {
-#if !TML
     var SavePath = typeof(Terraria.Program).GetField("SavePath"); //1442+
     if (SavePath is not null)
     {
@@ -87,8 +87,8 @@ static void Program_LaunchGame(object sender, HookEvents.Terraria.Program.Launch
         Terraria.Main.dedServ = true;
         Terraria.Program.ForceLoadAssembly(GetTerrariaAssembly(), initializeStaticMembers: true);
     }
-#endif
 }
+#endif
 
 static void TShockHooks()
 {
@@ -127,7 +127,6 @@ static void TShockHooks()
     HookEvents.Terraria.NPC.SetDefaults += Print;
     HookEvents.Terraria.NPC.SetDefaultsFromNetId += Print;
     // HookEvents.Terraria.NPC.StrikeNPC += (npc, args) => args.ContinueExecution = false;
-    HookEvents.Terraria.NPC.StrikeNPC += Print;
     HookEvents.Terraria.NPC.Transform += Print;
     HookEvents.Terraria.NPC.AI += Print;
     HookEvents.Terraria.WorldGen.StartHardmode += Print;
@@ -200,7 +199,9 @@ static void Main_DedServ(object sender, HookEvents.Terraria.Main.DedServEventArg
 }
 
 HookEvents.Terraria.Main.DedServ += Main_DedServ;
+#if !TML
 HookEvents.Terraria.Program.LaunchGame += Program_LaunchGame;
+#endif
 if (RuntimeInformation.ProcessArchitecture != Architecture.Arm64)
 {
     Terraria.Program.OnLaunched += Program_OnLaunched;
@@ -210,12 +211,14 @@ else
     TShockHooks();
 }
 
-#if TML
+#if TML && !tModLoader_1448_OrAbove
 On.MonoLaunch.GetBaseDirectory += (orig) =>
 {
     return Path.Combine(Environment.CurrentDirectory, "tModLoader");
 };
+#endif
 
+#if TML
 Terraria.ModLoader.Engine.InstallVerifier.steamAPIPath = Path.Combine("tModLoader", Terraria.ModLoader.Engine.InstallVerifier.steamAPIPath);
 if (args == null || args.Length == 0)
     args = new[] { "-server" };
