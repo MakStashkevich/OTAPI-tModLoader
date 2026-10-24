@@ -91,7 +91,7 @@ void PatchSendDataWriter(MonoModder modder)
     }
 
     // patch in a new custom compress tile block method that writes directly to the binary writer
-#if !TerrariaServer_1441_OrAbove // this version directly writes to a stream
+#if !TerrariaServer_1441_OrAbove && !tModLoader_1441_OrAbove // newer tML writes directly to a stream
     {
         var compressCalls = SendData.Body.Instructions.Where(i => i.Operand is MethodReference mref
             && mref.DeclaringType.FullName == typeof(Terraria.NetMessage).FullName
@@ -157,7 +157,7 @@ void PatchSendDataWriter(MonoModder modder)
     SendData.Body.OptimizeMacros();
 }
 
-#if !TerrariaServer_1441_OrAbove // this version directly writes to a stream
+#if !TerrariaServer_1441_OrAbove && !tModLoader_1441_OrAbove // newer tML writes directly to a stream
 namespace Terraria
 {
     public partial class patch_NetMessage : Terraria.NetMessage

@@ -22,7 +22,10 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 System.Console.WriteLine("MonoMod patch only needed for TML");
 #else
 using ModFramework;
+using Mono.Cecil;
 using MonoMod;
+using System.IO;
+using System.Linq;
 
 /// <summary>
 /// @doc A mod to update MonoMod assembly references.
@@ -32,13 +35,30 @@ using MonoMod;
 void PatchMonoMod(MonoModder modder)
 {
     var desired = typeof(MonoMod.MonoModder).Assembly.GetName().Version;
+    var tmlPath = System.Environment.GetEnvironmentVariable("OTAPI_TML_PATH")?.Trim();
 
-    //Update the references to match what is installed
+    // Match each MonoMod assembly reference to the version shipped by the target tModLoader.
     foreach (var reference in modder.Module.AssemblyReferences)
     {
         if (reference.Name.Contains("MonoMod"))
         {
-            reference.Version = desired;
+            var targetVersion = desired;
+            if (!string.IsNullOrWhiteSpace(tmlPath))
+            {
+                var librariesPath = Path.Combine(tmlPath, "Libraries");
+                if (Directory.Exists(librariesPath))
+                {
+                    var targetAssemblyPath = Directory.GetFiles(librariesPath, $"{reference.Name}.dll", SearchOption.AllDirectories)
+                        .FirstOrDefault();
+                    if (targetAssemblyPath is not null)
+                    {
+                        using var targetAssembly = AssemblyDefinition.ReadAssembly(targetAssemblyPath, new ReaderParameters { InMemory = true });
+                        targetVersion = targetAssembly.Name.Version;
+                    }
+                }
+            }
+
+            reference.Version = targetVersion;
         }
     }
 }

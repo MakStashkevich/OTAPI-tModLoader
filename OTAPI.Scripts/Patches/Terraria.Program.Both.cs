@@ -138,6 +138,7 @@ namespace Terraria
         const int LOAD_LIBRARY_SEARCH_DEFAULT_DIRS = 0x00001000;
 
 #if tModLoaderServer || tModLoader
+#if !tModLoader_1441_OrAbove
         public static extern void orig_LaunchGame_(bool isServer);
         public static void LaunchGame_(bool isServer)
         {
@@ -145,6 +146,7 @@ namespace Terraria
             orig_LaunchGame_(isServer);
             ShutdownOTAPI();
         }
+#endif
 #else // server + client
 #if Terraria_1442_OrAbove || TerrariaServer_1442_OrAbove
         public static extern void orig_RunGame();

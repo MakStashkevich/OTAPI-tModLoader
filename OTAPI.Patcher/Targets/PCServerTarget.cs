@@ -1,5 +1,6 @@
 ﻿using ModFramework;
 using ModFramework.Modules.CSharp;
+using Mono.Cecil;
 using MonoMod.Utils;
 using OTAPI.Patcher.Resolvers;
 using System;
@@ -16,6 +17,69 @@ namespace OTAPI.Patcher.Targets;
 [MonoMod.MonoModIgnore]
 public class PCServerTarget : IServerPatchTarget
 {
+    private static bool IsSafeHookType(TypeReference type)
+    {
+        if (type.MetadataType is MetadataType.Void or MetadataType.Boolean or MetadataType.Char
+            or MetadataType.SByte or MetadataType.Byte or MetadataType.Int16 or MetadataType.UInt16
+            or MetadataType.Int32 or MetadataType.UInt32 or MetadataType.Int64 or MetadataType.UInt64
+            or MetadataType.Single or MetadataType.Double or MetadataType.String or MetadataType.Object)
+            return true;
+
+        if (type is ByReferenceType byReference)
+            return IsSafeHookType(byReference.ElementType);
+        if (type is ArrayType array)
+            return IsSafeHookType(array.ElementType);
+        if (type is PointerType or FunctionPointerType or GenericParameter)
+            return false;
+        if (type is GenericInstanceType generic)
+        {
+            if (generic.GenericArguments.Any(argument => !IsSafeHookType(argument)))
+                return false;
+            type = generic.ElementType;
+        }
+
+        TypeDefinition definition;
+        try { definition = type.Resolve(); }
+        catch { return false; }
+
+        if (definition.CustomAttributes.Any(attribute =>
+                attribute.AttributeType.FullName == "System.Runtime.CompilerServices.IsByRefLikeAttribute"))
+            return false;
+
+        // HookEmitter puts return values and parameters into public event-args fields.
+        // A private nested tML type there makes every type in OTAPI unloadable.
+        for (var current = definition; current is not null; current = current.DeclaringType)
+            if (!(current.IsPublic || current.IsNestedPublic))
+                return false;
+
+        return true;
+    }
+
+    private static void CreateSafeHooks(TypeDefinition type, ModFwModder modder)
+    {
+        var eventAccessors = type.Events
+            .SelectMany(evt => new[] { evt.AddMethod, evt.RemoveMethod, evt.InvokeMethod })
+            .Where(method => method is not null)
+            .ToHashSet();
+
+        foreach (var method in type.Methods.ToArray())
+        {
+            if (!method.HasBody || method.IsConstructor || method.HasGenericParameters || eventAccessors.Contains(method))
+                continue;
+            // SendData already has a dedicated OTAPI wrapper in Terraria.NetMessage.Both.cs.
+            // Wrapping that replacement again creates an invalid mfwh_orig_SendData chain in tML 1.4.4.9.
+            if (type.FullName == "Terraria.NetMessage" && method.Name == "SendData")
+                continue;
+            if (!IsSafeHookType(method.ReturnType) || method.Parameters.Any(parameter => !IsSafeHookType(parameter.ParameterType)))
+            {
+                Console.WriteLine($"[OTAPI] Skipping hook with unsupported signature: {method.FullName}");
+                continue;
+            }
+
+            method.CreateHook(modder);
+        }
+    }
+
     public ModContext ModContext { get; } = new("Terraria");
 
     public virtual string DisplayText => "OTAPI PC Server";
@@ -30,6 +94,7 @@ public class PCServerTarget : IServerPatchTarget
     public virtual MarkdownDocumentor MarkdownDocumentor { get; } = new("OTAPI.PC.Server.mfw.md");
 
     public virtual string ArtifactName { get; } = "artifact-pc";
+    public virtual string MainAssemblyFileName => "OTAPI.dll";
 
     public virtual bool PublicEverything => true;
     public virtual bool GenerateSymbols => false;
@@ -41,6 +106,14 @@ public class PCServerTarget : IServerPatchTarget
 
     public virtual async Task<string> DownloadServerAsync()
     {
+        var localTargetDirectory = Environment.GetEnvironmentVariable("OTAPI_TML_PATH")?.Trim();
+        if (!String.IsNullOrWhiteSpace(localTargetDirectory))
+        {
+            if (!Directory.Exists(localTargetDirectory))
+                throw new DirectoryNotFoundException($"OTAPI_TML_PATH does not exist: {localTargetDirectory}");
+            return FileResolver.DetermineInputAssembly(localTargetDirectory);
+        }
+
         var zipUrl = this.GetZipUrl();
         var zipPath = await Common.DownloadZipAsync(zipUrl);
         var extracted = Common.ExtractZip(zipPath);
@@ -158,7 +231,8 @@ public class PCServerTarget : IServerPatchTarget
                 var dll = $"{args.Name}.dll";
 
                 // try tml first, its binaries override other builds
-                var tmp = Path.Combine("tModLoader", "Libraries", args.Name, "1.0.0", dll);
+                var tmlPath = Environment.GetEnvironmentVariable("OTAPI_TML_PATH")?.Trim();
+                var tmp = Path.Combine(String.IsNullOrWhiteSpace(tmlPath) ? "tModLoader" : tmlPath, "Libraries", args.Name, "1.0.0", dll);
                 if (File.Exists(tmp))
                 {
                     asmm = Assembly.Load(File.ReadAllBytes(tmp));
@@ -204,23 +278,26 @@ public class PCServerTarget : IServerPatchTarget
 
                             // generate static hooks
                             Console.Write("[OTAPI] Generating static hooks...");
-                            mm.Module.GetType("Terraria.Main").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.Item").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.NetMessage").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.Netplay").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.NPC").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.WorldGen").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.Chat.ChatHelper").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.GameContent.ItemDropRules.CommonCode").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.IO.WorldFile").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.Net.NetManager").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.Projectile").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.RemoteClient").CreateHooks(mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.Main"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.Item"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.NetMessage"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.Netplay"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.NPC"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.WorldGen"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.Chat.ChatHelper"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.GameContent.ItemDropRules.CommonCode"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.IO.WorldFile"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.Net.NetManager"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.Projectile"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.RemoteClient"), mm);
                             // mm.Module.GetType("Terraria.Liquid").CreateHooks(mm); TODO add value type hooks
-                            mm.Module.GetType("Terraria.Program").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.Wiring").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.GameContent.PressurePlateHelper").CreateHooks(mm);
-                            mm.Module.GetType("Terraria.GameContent.CraftingRequests")?.CreateHooks(mm);
+                            if (this is not TMLPCServerTarget)
+                                CreateSafeHooks(mm.Module.GetType("Terraria.Program"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.Wiring"), mm);
+                            CreateSafeHooks(mm.Module.GetType("Terraria.GameContent.PressurePlateHelper"), mm);
+                            var craftingRequests = mm.Module.GetType("Terraria.GameContent.CraftingRequests");
+                            if (craftingRequests is not null)
+                                CreateSafeHooks(craftingRequests, mm);
                             Console.WriteLine("Done");
                         }
                         else if (modType == ModType.Write)
@@ -249,7 +326,7 @@ public class PCServerTarget : IServerPatchTarget
         MarkdownDocumentor.Write();
 
         Console.WriteLine("[OTAPI] Building artifacts...");
-        this.WriteCIArtifacts(ArtifactName);
+        this.WriteCIArtifacts(ArtifactName, MainAssemblyFileName);
 
         Console.WriteLine("Patching has completed.");
     }

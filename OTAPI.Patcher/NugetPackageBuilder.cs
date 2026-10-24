@@ -52,7 +52,8 @@ public class NugetPackageBuilder
         var commitSha = Common.GetGitCommitSha();
         nuspec_xml = nuspec_xml.Replace("[INJECT_GIT_HASH]", String.IsNullOrWhiteSpace(commitSha) ? "" : $" git#{commitSha}");
 
-        var platforms = new[] { "net9.0" }; // relinker only does net9 currently. until there is a reason to implement it...
+        var targetFramework = Environment.GetEnvironmentVariable("OTAPI_TARGET_FRAMEWORK")?.Trim();
+        var platforms = new[] { String.IsNullOrWhiteSpace(targetFramework) ? "net9.0" : targetFramework };
         var steamworks = modder.Module.AssemblyReferences.First(x => x.Name == "Steamworks.NET");
         var newtonsoft = modder.Module.AssemblyReferences.First(x => x.Name == "Newtonsoft.Json");
         var dependencies = new[]

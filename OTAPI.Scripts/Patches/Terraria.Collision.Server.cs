@@ -33,7 +33,7 @@ namespace Terraria
     {
         // fix index out of range exceptions in this method.
 
-#if TerrariaServer_1441_OrAbove
+#if TerrariaServer_1441_OrAbove || tModLoader_1441_OrAbove
         public static extern void orig_GetEntityEdgeTiles(List<Point> result, Entity entity, bool left = true, bool right = true, bool up = true, bool down = true);
         public static void GetEntityEdgeTiles(List<Point> result, Entity entity, bool left = true, bool right = true, bool up = true, bool down = true)
         {
@@ -58,7 +58,7 @@ namespace Terraria
                 result[i] = pnt;
             }
 
-#if !TerrariaServer_1441_OrAbove
+#if !TerrariaServer_1441_OrAbove && !tModLoader_1441_OrAbove
             return result;
 #endif
         }

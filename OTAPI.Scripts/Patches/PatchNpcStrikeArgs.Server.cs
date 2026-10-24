@@ -71,6 +71,20 @@ partial class NpcStrikeArgs
                         {
                             return;
                         }
+
+                        // StrikeNPC is overloaded. The tModLoader 1.4.4.9 build
+                        // keeps both the legacy integer overload and the newer
+                        // HitInfo overload; only the selected overload receives
+                        // the entity argument. Matching by name alone also
+                        // rewrites calls to the legacy overload and produces
+                        // references to a method that does not exist.
+                        var expectedParameterCount = method.Method.Parameters.Count - 1;
+                        if (methodReference.Parameters.Count != expectedParameterCount
+                            || methodReference.Parameters.Where((parameter, index) =>
+                                parameter.ParameterType.FullName != method.Method.Parameters[index].ParameterType.FullName).Any())
+                        {
+                            return;
+                        }
                         methodReference.Parameters.Add(Entity);
 
                         var methodName = body.Method.DeclaringType.Name + "." + body.Method.Name;

@@ -30,6 +30,7 @@ public class TMLPCServerTarget : PCServerTarget
 {
     public override string DisplayText { get; } = "TML PC Server";
     public override string ArtifactName { get; } = "artifact-tml";
+    public override string MainAssemblyFileName => "tModLoader.dll";
     public override IFileResolver FileResolver { get; } = new TMLFileResolver();
 
     public override NugetPackageBuilder NugetPackager { get; } = new("OTAPI.TML.nupkg", Path.Combine(AppContext.BaseDirectory, "../../../../docs/OTAPI.TML.nuspec"));
@@ -42,7 +43,9 @@ public class TMLPCServerTarget : PCServerTarget
     {
         base.AddSearchDirectories(modder);
 
-        var folders = Directory.GetFiles(Path.Combine("tModLoader", "Libraries"), "*.dll", SearchOption.AllDirectories)
+        var tmlPath = Environment.GetEnvironmentVariable("OTAPI_TML_PATH")?.Trim();
+        var librariesPath = Path.Combine(String.IsNullOrWhiteSpace(tmlPath) ? "tModLoader" : tmlPath, "Libraries");
+        var folders = Directory.GetFiles(librariesPath, "*.dll", SearchOption.AllDirectories)
                 .Select(x => Path.GetDirectoryName(x))
                 .Distinct();
 
@@ -60,6 +63,7 @@ public class TMLPCServerTarget : PCServerTarget
     {
         base.LoadModifications();
 
-        ModContext.ReferenceFiles.Add(Path.Combine("tModLoader", "Libraries", "FNA", "1.0.0", "FNA.dll"));
+        var tmlPath = Environment.GetEnvironmentVariable("OTAPI_TML_PATH")?.Trim();
+        ModContext.ReferenceFiles.Add(Path.Combine(String.IsNullOrWhiteSpace(tmlPath) ? "tModLoader" : tmlPath, "Libraries", "FNA", "1.0.0", "FNA.dll"));
     }
 }

@@ -25,6 +25,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using static ModFramework.ModContext;
 
@@ -62,6 +63,116 @@ public interface IClientPatchTarget : IModPatchTarget
 [MonoMod.MonoModIgnore]
 public static partial class PatchTargetExtensions
 {
+    private sealed class TargetFrameworkResolver : IFrameworkResolver
+    {
+        private readonly IFrameworkResolver fallback = new DefaultFrameworkResolver();
+
+        public string FindFramework()
+        {
+            var referenceDirectory = Environment.GetEnvironmentVariable("OTAPI_FRAMEWORK_REF_DIR");
+            if (String.IsNullOrWhiteSpace(referenceDirectory))
+                return fallback.FindFramework();
+
+            if (!Directory.Exists(referenceDirectory))
+                throw new DirectoryNotFoundException($"OTAPI_FRAMEWORK_REF_DIR does not exist: {referenceDirectory}");
+
+            return referenceDirectory;
+        }
+    }
+
+    private static string TargetFramework =>
+        Environment.GetEnvironmentVariable("OTAPI_TARGET_FRAMEWORK")?.Trim() is { Length: > 0 } target
+            ? target
+            : "net9.0";
+
+    private static CoreLibRelinker AddCoreLibRelinker(ModFwModder modder)
+    {
+        var relinker = (CoreLibRelinker)Activator.CreateInstance(
+            typeof(CoreLibRelinker),
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            args: new object[] { modder },
+            culture: null)!;
+        relinker.FrameworkResolver = new TargetFrameworkResolver();
+        modder.AddTask(relinker);
+        return relinker;
+    }
+
+    private static void PatchTargetFrameworkAttribute(string path)
+    {
+        var target = TargetFramework;
+        if (!target.StartsWith("net", StringComparison.Ordinal) || !target.EndsWith(".0", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Unsupported OTAPI_TARGET_FRAMEWORK: {target}");
+
+        var version = target[3..^2];
+        var targetMajor = Int32.Parse(version, System.Globalization.CultureInfo.InvariantCulture);
+        var resolver = new DefaultAssemblyResolver();
+        resolver.AddSearchDirectory(Path.GetDirectoryName(path)!);
+        var tmlPath = Environment.GetEnvironmentVariable("OTAPI_TML_PATH")?.Trim();
+        if (!String.IsNullOrWhiteSpace(tmlPath) && Directory.Exists(Path.Combine(tmlPath, "Libraries")))
+        {
+            foreach (var directory in Directory.GetDirectories(Path.Combine(tmlPath, "Libraries"), "*", SearchOption.AllDirectories))
+                resolver.AddSearchDirectory(directory);
+        }
+        using var assembly = AssemblyDefinition.ReadAssembly(path, new ReaderParameters
+        {
+            InMemory = true,
+            AssemblyResolver = resolver,
+        });
+        var attribute = assembly.CustomAttributes.FirstOrDefault(x =>
+            x.AttributeType.FullName == typeof(System.Runtime.Versioning.TargetFrameworkAttribute).FullName);
+        if (attribute is null)
+            throw new InvalidOperationException($"TargetFrameworkAttribute missing from {path}");
+
+        attribute.ConstructorArguments[0] = new(attribute.ConstructorArguments[0].Type, $".NETCoreApp,Version=v{version}.0");
+
+        // The hook generator can leave framework references from the patcher's runtime in
+        // OTAPI.Runtime. A .NET 8 tModLoader cannot resolve System.Runtime 9, even for
+        // common types such as Delegate and MethodBase, so bind those references to the
+        // selected target framework's reference pack.
+        foreach (var reference in assembly.MainModule.AssemblyReferences)
+        {
+            if ((reference.Name == "System.Runtime" || reference.Name.StartsWith("System.", StringComparison.Ordinal))
+                && reference.Version.Major > targetMajor)
+                reference.Version = new Version(targetMajor, 0, 0, 0);
+        }
+
+        // Prefer the MonoMod runtime actually shipped with the selected tModLoader copy
+        // when HookGen emitted a reference to a newer NuGet build.
+        if (!String.IsNullOrWhiteSpace(tmlPath))
+        {
+            var fnaPath = Directory.GetFiles(Path.Combine(tmlPath, "Libraries"), "FNA.dll", SearchOption.AllDirectories)
+                .FirstOrDefault();
+            Version? tmlFnaVersion = null;
+            if (fnaPath is not null)
+            {
+                using var fnaAssembly = AssemblyDefinition.ReadAssembly(fnaPath, new ReaderParameters { InMemory = true });
+                tmlFnaVersion = fnaAssembly.Name.Version;
+            }
+
+            foreach (var reference in assembly.MainModule.AssemblyReferences.Where(x =>
+                         x.Name is "MonoMod.RuntimeDetour" or "MonoMod.Utils" && x.Version.Major >= 25))
+            {
+                var matchingFile = Directory.GetFiles(Path.Combine(tmlPath, "Libraries"), $"{reference.Name}.dll", SearchOption.AllDirectories)
+                    .FirstOrDefault();
+                if (matchingFile is null) continue;
+                using var matchingAssembly = AssemblyDefinition.ReadAssembly(matchingFile, new ReaderParameters { InMemory = true });
+                reference.Version = matchingAssembly.Name.Version;
+            }
+
+            // HookGen can emit references against the FNA version used by the patcher
+            // instead of the version bundled with tModLoader. Multiple FNA versions in
+            // one output make .NET 8 fail while JIT-compiling otherwise valid tML methods.
+            if (tmlFnaVersion is not null)
+            {
+                foreach (var reference in assembly.MainModule.AssemblyReferences.Where(x => x.Name == "FNA"))
+                    reference.Version = tmlFnaVersion;
+            }
+        }
+
+        assembly.Write(path);
+    }
+
     public static string ExtractResources(this IModPatchTarget target, string fileinput)
     {
         var dir = target.GetEmbeddedResourcesDirectory(fileinput);
@@ -79,13 +190,13 @@ public static partial class PatchTargetExtensions
         if (inputName != null) modder.AddMetadata("OTAPI.Input", inputName);
     }
 
-    public static void WriteCIArtifacts(this IPatchTarget target, string outputFolder)
+    public static void WriteCIArtifacts(this IPatchTarget target, string outputFolder, string mainAssemblyFileName = "OTAPI.dll")
     {
         if (Directory.Exists(outputFolder)) Directory.Delete(outputFolder, true);
         Directory.CreateDirectory(outputFolder);
 
         File.Copy(Path.Combine(AppContext.BaseDirectory, "../../../../COPYING.txt"), Path.Combine(outputFolder, "COPYING.txt"));
-        File.Copy(Path.Combine(AppContext.BaseDirectory, "OTAPI.dll"), Path.Combine(outputFolder, "OTAPI.dll"));
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "OTAPI.dll"), Path.Combine(outputFolder, mainAssemblyFileName));
         File.Copy(Path.Combine(AppContext.BaseDirectory, "OTAPI.Runtime.dll"), Path.Combine(outputFolder, "OTAPI.Runtime.dll"));
     }
 
@@ -129,12 +240,13 @@ public static partial class PatchTargetExtensions
 
         mm.Read();
 
-        mm.AddTask<CoreLibRelinker>();
+        AddCoreLibRelinker(mm);
 
         mm.MapDependencies();
         mm.AutoPatch();
 
         mm.Write();
+        PatchTargetFrameworkAttribute(output);
     }
 
     public static void AddConstants(this IModPatchTarget target, string inputName, ModFwModder modder)
@@ -211,7 +323,7 @@ public static partial class PatchTargetExtensions
             };
 
             target.AddSearchDirectories(mm);
-            mm.AddTask<CoreLibRelinker>();
+            AddCoreLibRelinker(mm);
 
             mm.Read();
 
@@ -230,6 +342,7 @@ public static partial class PatchTargetExtensions
             }
 
             mm.Write();
+            PatchTargetFrameworkAttribute(output);
 
             return mm.OutputPath;
         }
