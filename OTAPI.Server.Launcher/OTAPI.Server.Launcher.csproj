@@ -9,6 +9,7 @@
 
 	<ItemGroup>
 		<Compile Remove="csharp\plugins\modules\otapi\Example.cs" />
+		<Compile Remove="modifications\**\*.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -65,6 +66,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<None Include="modifications\**\*.cs">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Link>modifications\%(RecursiveDir)%(Filename)%(Extension)</Link>
+		</None>
 		<None Include="csharp\plugins\modules\otapi\example\Example.cs">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>

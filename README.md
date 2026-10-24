@@ -43,7 +43,38 @@ All OTAPI builds support C#/lua/js scripts via plugins, however you may need to 
 | Linux Client for PC | not yet supported but planned. should be similar to MacOS |  | &#x2612; |
 | iOS Client | not supported or planned |  | &#x2612; |
 | Android Client | not supported or planned |  | &#x2612; |
-| tModLoader Server | work has conducted in testing support for TML on Terraria 1.3, but no clear outcome until 1.4 support is released. | 1.3.5.3 | &#x2612; |
+| tModLoader Server (fork branch `yml-1444-compat`) | Experimental compatibility work; tModLoader 1.4.4.9 starts on .NET 8, with runtime telemetry plugin support. | Terraria 1.4.4.9 | &#x2611; |
+
+## Runtime world telemetry (tModLoader 1.4.4.9 fork)
+
+The server launcher includes an optional C# runtime plugin at
+`OTAPI.Server.Launcher/modifications/WorldTelemetry.Server.cs`. The launcher
+copies it to the server's `modifications` folder; OTAPI loads it through the
+ModFramework C# module when the dedicated server starts. Lua is also supported
+by OTAPI, but C# is used here for direct access to typed world state and a
+small, predictable runtime footprint.
+
+The plugin listens only on loopback (`127.0.0.1:38761` by default; override with
+`OTAPI_TELEMETRY_PORT`) and pushes one newline-delimited JSON snapshot per
+second to each connected client. It samples on Terraria's main update thread,
+then sends over a background socket writer with a one-snapshot queue, so a slow
+consumer cannot stall the game loop. It does not poll or write a JSON file.
+
+The snapshot contains the Terraria and OTAPI versions, world name/id/dimensions,
+difficulty (classic/expert/master/journey), hardmode and world time flags,
+online player slots/names and client-provided UUIDs, plus built-in Terraria
+boss and event progress flags. A reconnecting Python example is at
+`examples/world-telemetry/telemetry_client.py`; run it with
+`python3 examples/world-telemetry/telemetry_client.py`. A tunnel/monitor
+process on the same Mac can consume this stream directly and store its own
+history without reading the server's disk.
+
+The common tModLoader API does not provide one universal registry of defeated
+bosses from every installed mod. This snapshot therefore reports Terraria's
+built-in progression flags; mod-specific bosses (for example, from Calamity)
+need an adapter for that mod's own world progression system. Client UUIDs are
+provided by the connecting client and should not be treated as authenticated
+identity.
 
 # All packages
 
